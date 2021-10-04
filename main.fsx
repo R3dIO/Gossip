@@ -12,10 +12,10 @@ type GossipMessageTypes =
     | InitailizeNeighbours of IActorRef []
     | InitializeVariables of int
     | StartGossip of String
-    | ReportMsgRecvd of String
+    | ConvergeGossip
     | StartPushSum of Double
     | ComputePushSum of Double * Double * Double
-    | Result of Double * Double
+    | ConvergePushSum of Double * Double
     | Time of int
     | TotalNodes of int
     | CallWorker
@@ -51,8 +51,8 @@ let nthroot n A =
     f (A / double n)
 //-------------------------------------- Utils --------------------------------------//
 
-//-------------------------------------- Supervisor Actor --------------------------------------//
-let Supervisor(mailbox: Actor<_>) =
+//-------------------------------------- Master Actor --------------------------------------//
+let Master(mailbox: Actor<_>) =
     
     let mutable count = 0
     let mutable start = 0
@@ -61,29 +61,30 @@ let Supervisor(mailbox: Actor<_>) =
     let rec loop()= actor{
         let! msg = mailbox.Receive();
         match msg with 
-        | ReportMsgRecvd _ -> 
+        | Time strtTime -> start <- strtTime
+        | TotalNodes n -> totalNodes <- n
+        | ConvergeGossip -> 
             count <- count + 1
             if count = totalNodes then
                 timer.Stop()
                 printfn "Time for convergence: %f ms" timer.Elapsed.TotalMilliseconds
                 printfn "------------- End Gossip -------------"
                 Environment.Exit(0)
-        | Result (sum, weight) ->
+        | ConvergePushSum (sum, weight) ->
             count <- count + 1
             if count = totalNodes then
                 timer.Stop()
                 printfn "Time for convergence: %f ms" timer.Elapsed.TotalMilliseconds
+                printfn "Delta value of convergence: %f sum = %f & weight = %f" (sum/weight) sum weight
                 printfn "------------- End Push-Sum -------------"
                 Environment.Exit(0)
-        | Time strtTime -> start <- strtTime
-        | TotalNodes n -> totalNodes <- n
         | _ -> ()
 
         return! loop()
     }            
     loop()
 
-let supervisor = spawn system "Supervisor" Supervisor
+let master = spawn system "Master" Master
 let saturatedNodesDict = new Dictionary<IActorRef, bool>()
 //-------------------------------------- Supervisor Actor --------------------------------------//
 
@@ -118,8 +119,8 @@ let Worker(mailbox: Actor<_>) =
         | CallWorker ->
             if rumourCount = 0 then 
                 mailbox.Self <! ActivateWorker
-            if (rumourCount = 15) then 
-                supervisor <! ReportMsgRecvd "Rumor"
+            if (not saturatedNodesDict.[mailbox.Self]) && (rumourCount = 15) then 
+                master <! ConvergeGossip
                 saturatedNodesDict.[mailbox.Self] <- true
             rumourCount <- rumourCount + 1
 
@@ -150,7 +151,7 @@ let Worker(mailbox: Actor<_>) =
                 if  termRound = 3 then
                     termRound <- 0
                     alreadyConverged <- true
-                    supervisor <! Result(sum, weight)
+                    master <! ConvergePushSum(sum, weight)
             
                 sum <- newsum / 2.0
                 weight <- newweight / 2.0
@@ -300,8 +301,8 @@ match topology with
 timer.Start()
 // Select a random worker to begin the gossip
 let leader = Random().Next(0, nodes)
-supervisor <! TotalNodes(nodes)
-supervisor <! Time(DateTime.Now.TimeOfDay.Milliseconds)
+master <! TotalNodes(nodes)
+master <! Time(DateTime.Now.TimeOfDay.Milliseconds)
 
 match protocol with
 | "gossip" -> 
