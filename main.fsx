@@ -21,6 +21,7 @@ type GossipMessageTypes =
     | CallWorker
     | AddNeighbors
     | ActivateWorker
+    | ActivateGossipWorker of List<IActorRef>
 
 let mutable nodes = int (string (fsi.CommandLineArgs.GetValue 1))
 let topology = string (fsi.CommandLineArgs.GetValue 2)
@@ -162,16 +163,11 @@ let Worker(mailbox: Actor<_>) =
 
 
 // Activate Gossip worker first initialize neighbour and then select a random node for Gossip
-let ActorWorker (mailbox: Actor<_>) =
-    let neighbors = new List<IActorRef>()
+let GossipActor (mailbox: Actor<_>) =
     let rec loop() = actor {
         let! message = mailbox.Receive()
         match message with 
-        | AddNeighbors _ ->
-            for i in [0..nodes-1] do
-                neighbors.Add globalNodeArray.[i]
-            mailbox.Self <! ActivateWorker
-        | ActivateWorker ->
+        | ActivateGossipWorker neighbors ->
             if neighbors.Count > 0 then
                 let randomNumber = Random().Next(neighbors.Count)
                 let randomActor = neighbors.[randomNumber]
@@ -181,7 +177,7 @@ let ActorWorker (mailbox: Actor<_>) =
                     (neighbors.Remove randomActor) |> ignore
                 else 
                     randomActor <! CallWorker
-                mailbox.Self <! ActivateWorker 
+                mailbox.Self <! ActivateGossipWorker neighbors
         | _ -> ()
         return! loop()
     }
@@ -312,10 +308,13 @@ match protocol with
     printfn "------------- Start Gossip -------------"
     match topology with
     | "line" | "2D" | "Imp2D" | "3D" | "Imp3D" ->
-        let GossipActor = spawn system "ActorWorker" ActorWorker
+        let GossipActorWorker = spawn system "ActorWorker" GossipActor
+        let neighbors = new List<IActorRef>()
         printfn "Executing Gossip Protocol for fixed Geometery"
         globalNodeArray.[leader] <! ActivateWorker
-        GossipActor <! AddNeighbors
+        for i in [0..nodes-1] do
+            neighbors.Add globalNodeArray.[i]
+        GossipActorWorker <! ActivateGossipWorker neighbors
     | "full" ->
         printfn "Executing Gossip Protocol for full network"
         globalNodeArray.[leader] <! CallWorker
