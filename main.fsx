@@ -9,7 +9,7 @@ open System.Collections.Generic
 
 //-------------------------------------- Initialization --------------------------------------//
 type GossipMessageTypes =
-    | Initailize of IActorRef []
+    | InitailizeNeighbours of IActorRef []
     | InitializeVariables of int
     | StartGossip of String
     | ReportMsgRecvd of String
@@ -18,9 +18,9 @@ type GossipMessageTypes =
     | Result of Double * Double
     | Time of int
     | TotalNodes of int
-    | ShareRumor
     | CallWorker
     | AddNeighbors
+    | ActivateWorker
 
 let mutable nodes = int (string (fsi.CommandLineArgs.GetValue 1))
 let topology = string (fsi.CommandLineArgs.GetValue 2)
@@ -101,26 +101,26 @@ let Worker(mailbox: Actor<_>) =
         
         match message with 
 
-        | Initailize aref ->
+        | InitializeVariables number ->
+            sum <- number |> double
+
+        | InitailizeNeighbours aref ->
             neighbours <- aref
 
-        | ShareRumor ->
+        | ActivateWorker ->
             if rumourCount < 11 then
                 let rnd = Random().Next(0, neighbours.Length)
                 if not saturatedNodesDict.[neighbours.[rnd]] then
                     neighbours.[rnd] <! CallWorker
-                mailbox.Self <! ShareRumor
+                mailbox.Self <! ActivateWorker
 
         | CallWorker ->
             if rumourCount = 0 then 
-                mailbox.Self <! ShareRumor
+                mailbox.Self <! ActivateWorker
             if (rumourCount = 15) then 
                 supervisor <! ReportMsgRecvd "Rumor"
                 saturatedNodesDict.[mailbox.Self] <- true
             rumourCount <- rumourCount + 1
-            
-        | InitializeVariables number ->
-            sum <- number |> double
 
         | StartPushSum delta ->
             let index = Random().Next(0, neighbours.Length)
@@ -202,6 +202,7 @@ match topology with
 
     for i in [ 0 .. nodes ] do
         let mutable neighbourArray = [||]
+        let mutable localArray = [||]
         if i = 0 then
             neighbourArray <- (Array.append neighbourArray [| globalNodeArray.[i+1] |])
         elif i = nodes then
@@ -209,7 +210,7 @@ match topology with
         else 
             neighbourArray <- (Array.append neighbourArray [| globalNodeArray.[(i - 1)] ; globalNodeArray.[(i + 1 ) ] |] ) 
         
-        globalNodeArray.[i] <! Initailize(neighbourArray)  
+        globalNodeArray.[i] <! InitailizeNeighbours(neighbourArray)  
 
 | "full" ->
     
@@ -218,7 +219,7 @@ match topology with
         for j in [0..nodes] do 
             if i <> j then
                 neighbourArray <- (Array.append neighbourArray [|globalNodeArray.[j]|])
-        globalNodeArray.[i]<! Initailize(neighbourArray)
+        globalNodeArray.[i]<! InitailizeNeighbours(neighbourArray)
 
 | "2D" ->
     let gridSize = nodes |> float |> sqrt |> ceil |> int 
@@ -234,7 +235,7 @@ match topology with
                 neighbours <- (Array.append neighbours [| globalNodeArray.[ x + ((y - 1 ) * gridSize)] |])
             if  y + 1 < gridSize then
                 neighbours <- (Array.append neighbours [| globalNodeArray.[ x + ((y + 1) * gridSize)] |])
-            globalNodeArray.[y * gridSize + x] <! Initailize(neighbours)
+            globalNodeArray.[y * gridSize + x] <! InitailizeNeighbours(neighbours)
 
 | "Imp2D" ->
     let gridSize = nodes |> float |> sqrt |> ceil |> int
@@ -252,7 +253,7 @@ match topology with
                 neighbours <- (Array.append neighbours [| globalNodeArray.[ x + ((y + 1) * gridSize)] |])
             let rnd = Random().Next(0, nodes-1)
             neighbours <- (Array.append neighbours [| globalNodeArray.[rnd] |])
-            globalNodeArray.[y * gridSize + x] <! Initailize(neighbours)
+            globalNodeArray.[y * gridSize + x] <! InitailizeNeighbours(neighbours)
 
 | "3D" ->
     let gridSize = nthroot (float 3) (float nodes) |> ceil |> int
@@ -273,7 +274,7 @@ match topology with
                     neighbours <- (Array.append neighbours [| globalNodeArray.[(x) + (y * gridSize) + ((z + 1) * (pown gridSize 2))] |])
                 if  z - 1 >= 0 then
                     neighbours <- (Array.append neighbours [| globalNodeArray.[(x) + (y * gridSize) + ((z - 1) * (pown gridSize 2))] |])
-                globalNodeArray.[x + (y * gridSize) + (z  * (pown gridSize 2))] <! Initailize(neighbours)
+                globalNodeArray.[x + (y * gridSize) + (z  * (pown gridSize 2))] <! InitailizeNeighbours(neighbours)
 
 
 | "Imp3D" ->
@@ -297,7 +298,7 @@ match topology with
                     neighbours <- (Array.append neighbours [| globalNodeArray.[(x) + (y * gridSize) + ((z - 1) * (pown gridSize 2))] |])
                 let rnd = Random().Next(0, nodes-1)
                 neighbours <- (Array.append neighbours [| globalNodeArray.[rnd] |])
-                globalNodeArray.[x + (y * gridSize) + (z  * (pown gridSize 2))] <! Initailize(neighbours)
+                globalNodeArray.[x + (y * gridSize) + (z  * (pown gridSize 2))] <! InitailizeNeighbours(neighbours)
 | _ -> ()
 
 timer.Start()
