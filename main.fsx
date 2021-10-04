@@ -9,18 +9,18 @@ open System.Collections.Generic
 
 //-------------------------------------- Initialization --------------------------------------//
 type GossipMessageTypes =
+    | Time of int
+    | TotalNodes of int
     | InitailizeNeighbours of IActorRef []
     | InitializeVariables of int
     | StartGossip of String
+    | ShareGossip
     | ConvergeGossip
     | StartPushSum of Double
     | ComputePushSum of Double * Double * Double
     | ConvergePushSum of Double * Double
-    | Time of int
-    | TotalNodes of int
     | CallWorker
     | AddNeighbors
-    | ActivateWorker
     | ActivateGossipWorker of List<IActorRef>
 
 let mutable nodes = int (string (fsi.CommandLineArgs.GetValue 1))
@@ -109,16 +109,16 @@ let Worker(mailbox: Actor<_>) =
         | InitailizeNeighbours aref ->
             neighbours <- aref
 
-        | ActivateWorker ->
+        | ShareGossip ->
             if rumourCount < 11 then
                 let rnd = Random().Next(0, neighbours.Length)
                 if not saturatedNodesDict.[neighbours.[rnd]] then
                     neighbours.[rnd] <! CallWorker
-                mailbox.Self <! ActivateWorker
+                mailbox.Self <! ShareGossip
 
         | CallWorker ->
             if rumourCount = 0 then 
-                mailbox.Self <! ActivateWorker
+                mailbox.Self <! ShareGossip
             if (not saturatedNodesDict.[mailbox.Self]) && (rumourCount = 15) then 
                 master <! ConvergeGossip
                 saturatedNodesDict.[mailbox.Self] <- true
@@ -312,7 +312,7 @@ match protocol with
         let GossipActorWorker = spawn system "ActorWorker" GossipActor
         let neighbors = new List<IActorRef>()
         printfn "Executing Gossip Protocol for fixed Geometery"
-        globalNodeArray.[leader] <! ActivateWorker
+        globalNodeArray.[leader] <! ShareGossip
         for i in [0..nodes-1] do
             neighbors.Add globalNodeArray.[i]
         GossipActorWorker <! ActivateGossipWorker neighbors
