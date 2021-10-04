@@ -94,7 +94,7 @@ let Worker(mailbox: Actor<_>) =
     let mutable neighbours: IActorRef [] = [||]
     let mutable sum = 0 |>double
     let mutable weight = 1.0
-    let mutable termRound = 1
+    let mutable termRound = 0
     let mutable alreadyConverged = false
     
     
@@ -135,7 +135,7 @@ let Worker(mailbox: Actor<_>) =
             let newsum = sum + s
             let newweight = weight + w
 
-            let diff = sum / weight - newsum / newweight |> abs
+            let change = sum / weight - newsum / newweight |> abs
 
             if alreadyConverged then
 
@@ -143,13 +143,12 @@ let Worker(mailbox: Actor<_>) =
                 neighbours.[index] <! ComputePushSum(s, w, delta)
             
             else
-                if diff > delta then
-                    termRound <- 0
-                else 
+                if change < delta then
                     termRound <- termRound + 1
+                else 
+                    termRound <- 0
 
                 if  termRound = 3 then
-                    termRound <- 0
                     alreadyConverged <- true
                     master <! ConvergePushSum(sum, weight)
             
