@@ -13,14 +13,12 @@ type GossipMessageTypes =
     | TotalNodes of int
     | InitailizeNeighbours of IActorRef []
     | InitializeVariables of int
-    | StartGossip of String
     | ShareGossip
+    | CallWorker
     | ConvergeGossip
     | StartPushSum of Double
     | ComputePushSum of Double * Double * Double
     | ConvergePushSum of Double * Double
-    | CallWorker
-    | AddNeighbors
     | ActivateGossipWorker of List<IActorRef>
 
 let mutable nodes = int (string (fsi.CommandLineArgs.GetValue 1))
@@ -89,12 +87,65 @@ let saturatedNodesDict = new Dictionary<IActorRef, bool>()
 //-------------------------------------- Supervisor Actor --------------------------------------//
 
 //-------------------------------------- Worker Actor --------------------------------------//
-let Worker(mailbox: Actor<_>) =
+    // Activate Gossip worker first initialize neighbour and then select a random node for Gossip
+let GossipActor (mailbox: Actor<_>) =
+    let rec loop() = actor {
+        let! message = mailbox.Receive()
+        match message with 
+        | ActivateGossipWorker neighbors ->
+            if neighbors.Count > 0 then
+                let randomNumber = Random().Next(neighbors.Count)
+                let randomActor = neighbors.[randomNumber]
+                
+                // Check if node is not converged then send the message
+                if (saturatedNodesDict.[neighbors.[randomNumber]]) then  
+                    (neighbors.Remove randomActor) |> ignore
+                else 
+                    randomActor <! CallWorker
+                mailbox.Self <! ActivateGossipWorker neighbors
+        | _ -> ()
+        return! loop()
+    }
+    loop()
+
+let GossipWorker (mailbox: Actor<_>) =
     let mutable rumourCount = 0
     let mutable neighbours: IActorRef [] = [||]
+
+    let rec loop()= actor{
+        let! message = mailbox.Receive();
+        try
+            match message with
+            | InitailizeNeighbours aref ->
+                neighbours <- aref
+
+            | ShareGossip ->
+                if rumourCount < 11 then
+                    let rnd = Random().Next(0, neighbours.Length)
+                    if not saturatedNodesDict.[neighbours.[rnd]] then
+                        neighbours.[rnd] <! CallWorker
+                    mailbox.Self <! ShareGossip
+
+            | CallWorker ->
+                if rumourCount = 0 then 
+                    mailbox.Self <! ShareGossip
+                if (not saturatedNodesDict.[mailbox.Self]) && (rumourCount = 15) then 
+                    master <! ConvergeGossip
+                    saturatedNodesDict.[mailbox.Self] <- true
+                rumourCount <- rumourCount + 1
+
+            | _ -> ()
+        with
+            | :? System.IndexOutOfRangeException -> printfn "Tried to access outside array!" |> ignore
+        return! loop()
+    }            
+    loop()
+
+let PushSumWorker (mailbox: Actor<_>) =
     let mutable sum = 0 |>double
     let mutable weight = 1.0
-    let mutable termRound = 0
+    let mutable termRound = 1
+    let mutable neighbours: IActorRef [] = [||]
     let mutable alreadyConverged = false
     
     
@@ -108,21 +159,6 @@ let Worker(mailbox: Actor<_>) =
 
         | InitailizeNeighbours aref ->
             neighbours <- aref
-
-        | ShareGossip ->
-            if rumourCount < 11 then
-                let rnd = Random().Next(0, neighbours.Length)
-                if not saturatedNodesDict.[neighbours.[rnd]] then
-                    neighbours.[rnd] <! CallWorker
-                mailbox.Self <! ShareGossip
-
-        | CallWorker ->
-            if rumourCount = 0 then 
-                mailbox.Self <! ShareGossip
-            if (not saturatedNodesDict.[mailbox.Self]) && (rumourCount = 15) then 
-                master <! ConvergeGossip
-                saturatedNodesDict.[mailbox.Self] <- true
-            rumourCount <- rumourCount + 1
 
         | StartPushSum delta ->
             let index = Random().Next(0, neighbours.Length)
@@ -161,35 +197,19 @@ let Worker(mailbox: Actor<_>) =
     }            
     loop()
 
-
-// Activate Gossip worker first initialize neighbour and then select a random node for Gossip
-let GossipActor (mailbox: Actor<_>) =
-    let rec loop() = actor {
-        let! message = mailbox.Receive()
-        match message with 
-        | ActivateGossipWorker neighbors ->
-            if neighbors.Count > 0 then
-                let randomNumber = Random().Next(neighbors.Count)
-                let randomActor = neighbors.[randomNumber]
-                
-                // Check if node is not converged then send the message
-                if (saturatedNodesDict.[neighbors.[randomNumber]]) then  
-                    (neighbors.Remove randomActor) |> ignore
-                else 
-                    randomActor <! CallWorker
-                mailbox.Self <! ActivateGossipWorker neighbors
-        | _ -> ()
-        return! loop()
-    }
-    loop()
 //-------------------------------------- Worker Actor --------------------------------------//
 
 //-------------------------------------- Main Program --------------------------------------//
 globalNodeArray <- Array.zeroCreate (nodes + 1)
 for x in [0..nodes] do
-    let key: string = "worker" + string(x) 
-    let actorRef = spawn system (key) Worker
-    globalNodeArray.[x] <- actorRef 
+    match protocol with
+    | "gossip" -> 
+        let key: string = "GossipWorker" + string(x)
+        globalNodeArray.[x] <- spawn system (key) GossipWorker
+    | "push-sum" ->
+        let key: string = "PushSumWorker" + string(x)
+        globalNodeArray.[x] <- spawn system (key) PushSumWorker
+    | _ -> Environment.Exit(0)
     saturatedNodesDict.Add(globalNodeArray.[x], false)
     globalNodeArray.[x] <! InitializeVariables x
 
