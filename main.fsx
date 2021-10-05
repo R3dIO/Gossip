@@ -19,7 +19,7 @@ type GossipMessageTypes =
     | StartPushSum of Double
     | ComputePushSum of Double * Double * Double
     | ConvergePushSum of Double * Double
-    | ActivateGossipWorker of List<IActorRef>
+    | ActivateGossipWorker of List<IActorRef> * int
 
 let mutable nodes = int (string (fsi.CommandLineArgs.GetValue 1))
 let topology = string (fsi.CommandLineArgs.GetValue 2)
@@ -92,17 +92,19 @@ let GossipActor (mailbox: Actor<_>) =
     let rec loop() = actor {
         let! message = mailbox.Receive()
         match message with 
-        | ActivateGossipWorker neighbors ->
-            if neighbors.Count > 0 then
-                let randomNumber = Random().Next(neighbors.Count)
-                let randomActor = neighbors.[randomNumber]
+        | ActivateGossipWorker (neighborsList: List<IActorRef>, neighboursToActivate: int) ->
+            if neighborsList.Count > 0 then
+                let randomNumber = Random().Next(neighborsList.Count)
+                let randomActor = neighborsList.[randomNumber]
                 
                 // Check if node is not converged then send the message
-                if (saturatedNodesDict.[neighbors.[randomNumber]]) then  
-                    (neighbors.Remove randomActor) |> ignore
+                if (saturatedNodesDict.[neighborsList.[randomNumber]]) then  
+                    (neighborsList.Remove randomActor) |> ignore
                 else 
                     randomActor <! CallWorker
-                mailbox.Self <! ActivateGossipWorker neighbors
+
+                // if(neighboursToActivate > 0) then
+                mailbox.Self <! ActivateGossipWorker(neighborsList, (neighboursToActivate - 1))
         | _ -> ()
         return! loop()
     }
@@ -298,7 +300,7 @@ match protocol with
         globalNodeArray.[leader] <! ShareGossip
         for i in [0..nodes-1] do
             neighbors.Add globalNodeArray.[i]
-        GossipActorWorker <! ActivateGossipWorker neighbors
+        GossipActorWorker <! ActivateGossipWorker(neighbors, int(nodes))
     | "full" ->
         printfn "Executing Gossip Protocol for full network"
         globalNodeArray.[leader] <! CallWorker
