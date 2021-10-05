@@ -218,7 +218,6 @@ match topology with
 
     for i in [ 0 .. nodes ] do
         let mutable neighbourArray = [||]
-        let mutable localArray = [||]
         if i = 0 then
             neighbourArray <- (Array.append neighbourArray [| globalNodeArray.[i+1] |])
         elif i = nodes then
@@ -237,84 +236,49 @@ match topology with
                 neighbourArray <- (Array.append neighbourArray [|globalNodeArray.[j]|])
         globalNodeArray.[i]<! InitailizeNeighbours(neighbourArray)
 
-| "2D" ->
+| "2D" | "Imp2D" ->
     let gridSize = nodes |> float |> sqrt |> ceil |> int 
 
     for y in [ 0 .. (gridSize-1)] do
         for x in [ 0 .. (gridSize-1) ] do
-            let mutable neighbours: IActorRef [] = [||]
+            let mutable neighbourArray: IActorRef [] = [||]
             if x + 1 < gridSize then
-                neighbours <- (Array.append neighbours [| globalNodeArray.[ (x + 1) + y * gridSize] |])
+                neighbourArray <- (Array.append neighbourArray [| globalNodeArray.[ (x + 1) + y * gridSize] |])
             if  x - 1 >= 0 then 
-                neighbours <- (Array.append neighbours [| globalNodeArray.[ (x - 1) + y * gridSize] |])
+                neighbourArray <- (Array.append neighbourArray [| globalNodeArray.[ (x - 1) + y * gridSize] |])
             if y - 1 >= 0 then
-                neighbours <- (Array.append neighbours [| globalNodeArray.[ x + ((y - 1 ) * gridSize)] |])
+                neighbourArray <- (Array.append neighbourArray [| globalNodeArray.[ x + ((y - 1 ) * gridSize)] |])
             if  y + 1 < gridSize then
-                neighbours <- (Array.append neighbours [| globalNodeArray.[ x + ((y + 1) * gridSize)] |])
-            globalNodeArray.[y * gridSize + x] <! InitailizeNeighbours(neighbours)
-
-| "Imp2D" ->
-    let gridSize = nodes |> float |> sqrt |> ceil |> int
-
-    for y in [ 0 .. (gridSize-1)] do
-        for x in [ 0 .. (gridSize-1) ] do
-            let mutable neighbours: IActorRef [] = [||]
-            if x + 1 < gridSize then
-                neighbours <- (Array.append neighbours [| globalNodeArray.[ (x + 1) + y * gridSize] |])
-            if  x - 1 >= 0 then 
-                neighbours <- (Array.append neighbours [| globalNodeArray.[ (x - 1) + y * gridSize] |])
-            if y - 1 >= 0 then
-                neighbours <- (Array.append neighbours [| globalNodeArray.[ x + ((y - 1 ) * gridSize)] |])
-            if  y + 1 < gridSize then
-                neighbours <- (Array.append neighbours [| globalNodeArray.[ x + ((y + 1) * gridSize)] |])
-            let rnd = Random().Next(0, nodes-1)
-            neighbours <- (Array.append neighbours [| globalNodeArray.[rnd] |])
-            globalNodeArray.[y * gridSize + x] <! InitailizeNeighbours(neighbours)
-
-| "3D" ->
-    let gridSize = nthroot (float 3) (float nodes) |> ceil |> int
-
-    for z in [ 0 .. (gridSize - 1)] do
-        for y in [ 0 .. (gridSize - 1)] do
-            for x in [ 0 .. (gridSize - 1)] do
-                let mutable neighbours: IActorRef [] = [||]
-                if  x - 1 >= 0 then
-                    neighbours <- (Array.append neighbours [| globalNodeArray.[(x - 1) + (y * gridSize) + z * (pown gridSize 2)] |])
-                if  x + 1 < gridSize then
-                    neighbours <- (Array.append neighbours [| globalNodeArray.[(x + 1) + (y * gridSize) + z * (pown gridSize 2)] |])
-                if  y + 1 < gridSize then
-                    neighbours <- (Array.append neighbours [| globalNodeArray.[(x) + ((y + 1) * gridSize) + z * (pown gridSize 2)] |])
-                if  y - 1 >= 0 then
-                    neighbours <- (Array.append neighbours [| globalNodeArray.[(x) + ((y - 1) * gridSize) + z * (pown gridSize 2)] |])
-                if  z + 1 < gridSize then
-                    neighbours <- (Array.append neighbours [| globalNodeArray.[(x) + (y * gridSize) + ((z + 1) * (pown gridSize 2))] |])
-                if  z - 1 >= 0 then
-                    neighbours <- (Array.append neighbours [| globalNodeArray.[(x) + (y * gridSize) + ((z - 1) * (pown gridSize 2))] |])
-                globalNodeArray.[x + (y * gridSize) + (z  * (pown gridSize 2))] <! InitailizeNeighbours(neighbours)
-
-
-| "Imp3D" ->
-    let gridSize = nthroot (float 3) (float nodes) |> ceil |> int
-
-    for z in [ 0 .. (gridSize - 1)] do
-        for y in [ 0 .. (gridSize - 1)] do
-            for x in [ 0 .. (gridSize - 1)] do
-                let mutable neighbours: IActorRef [] = [||]
-                if  x - 1 >= 0 then
-                    neighbours <- (Array.append neighbours [| globalNodeArray.[(x - 1) + (y * gridSize) + z * (pown gridSize 2)] |])
-                if  x + 1 < gridSize then
-                    neighbours <- (Array.append neighbours [| globalNodeArray.[(x + 1) + (y * gridSize) + z * (pown gridSize 2)] |])
-                if  y + 1 < gridSize then
-                    neighbours <- (Array.append neighbours [| globalNodeArray.[(x) + ((y + 1) * gridSize) + z * (pown gridSize 2)] |])
-                if  y - 1 >= 0 then
-                    neighbours <- (Array.append neighbours [| globalNodeArray.[(x) + ((y - 1) * gridSize) + z * (pown gridSize 2)] |])
-                if  z + 1 < gridSize then
-                    neighbours <- (Array.append neighbours [| globalNodeArray.[(x) + (y * gridSize) + ((z + 1) * (pown gridSize 2))] |])
-                if  z - 1 >= 0 then
-                    neighbours <- (Array.append neighbours [| globalNodeArray.[(x) + (y * gridSize) + ((z - 1) * (pown gridSize 2))] |])
+                neighbourArray <- (Array.append neighbourArray [| globalNodeArray.[ x + ((y + 1) * gridSize)] |])
+            if topology = "Imp2D" then
                 let rnd = Random().Next(0, nodes-1)
-                neighbours <- (Array.append neighbours [| globalNodeArray.[rnd] |])
-                globalNodeArray.[x + (y * gridSize) + (z  * (pown gridSize 2))] <! InitailizeNeighbours(neighbours)
+                neighbourArray <- (Array.append neighbourArray [| globalNodeArray.[rnd] |])
+            globalNodeArray.[y * gridSize + x] <! InitailizeNeighbours(neighbourArray)
+
+| "3D" | "Imp3D" ->
+    let gridSize = nthroot (float 3) (float nodes) |> ceil |> int
+
+    for z in [ 0 .. (gridSize - 1)] do
+        for y in [ 0 .. (gridSize - 1)] do
+            for x in [ 0 .. (gridSize - 1)] do
+                let mutable neighbourArray: IActorRef [] = [||]
+                if  x - 1 >= 0 then
+                    neighbourArray <- (Array.append neighbourArray [| globalNodeArray.[(x - 1) + (y * gridSize) + z * (pown gridSize 2)] |])
+                if  x + 1 < gridSize then
+                    neighbourArray <- (Array.append neighbourArray [| globalNodeArray.[(x + 1) + (y * gridSize) + z * (pown gridSize 2)] |])
+                if  y + 1 < gridSize then
+                    neighbourArray <- (Array.append neighbourArray [| globalNodeArray.[(x) + ((y + 1) * gridSize) + z * (pown gridSize 2)] |])
+                if  y - 1 >= 0 then
+                    neighbourArray <- (Array.append neighbourArray [| globalNodeArray.[(x) + ((y - 1) * gridSize) + z * (pown gridSize 2)] |])
+                if  z + 1 < gridSize then
+                    neighbourArray <- (Array.append neighbourArray [| globalNodeArray.[(x) + (y * gridSize) + ((z + 1) * (pown gridSize 2))] |])
+                if  z - 1 >= 0 then
+                    neighbourArray <- (Array.append neighbourArray [| globalNodeArray.[(x) + (y * gridSize) + ((z - 1) * (pown gridSize 2))] |])
+                if topology = "Imp3D" then
+                    let rnd = Random().Next(0, nodes-1)
+                    neighbourArray <- (Array.append neighbourArray [| globalNodeArray.[rnd] |])
+                globalNodeArray.[x + (y * gridSize) + (z  * (pown gridSize 2))] <! InitailizeNeighbours(neighbourArray)
+
 | _ -> ()
 
 timer.Start()
