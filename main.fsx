@@ -17,14 +17,14 @@ type GossipMessageTypes =
     | CallWorker
     | ConvergeGossip
     | StartPushSum of Double
-    | ComputePushSum of Double * Double * Double
+    | CalculatePushSum of Double * Double * Double
     | ConvergePushSum of Double * Double
     | ActivateGossipWorker of List<IActorRef> * int
 
 let mutable nodes = int (string (fsi.CommandLineArgs.GetValue 1))
 let topology = string (fsi.CommandLineArgs.GetValue 2)
-let protocol = string (fsi.CommandLineArgs.GetValue 3)
-let timer = Diagnostics.Stopwatch()
+let algorithm = string (fsi.CommandLineArgs.GetValue 3)
+let stopWatch = Diagnostics.Stopwatch()
 let system = ActorSystem.Create("System")
 
 let mutable normalizedNumOfNodes = nodes |> float
@@ -52,27 +52,27 @@ let nthroot n A =
 //-------------------------------------- Master Actor --------------------------------------//
 let Master(mailbox: Actor<_>) =
     
-    let mutable count = 0
+    let mutable nodeCount = 0
+    let mutable totalNumNodes = 0
     let mutable start = 0
-    let mutable totalNodes = 0
 
     let rec loop()= actor{
         let! msg = mailbox.Receive();
         match msg with 
         | Time strtTime -> start <- strtTime
-        | TotalNodes n -> totalNodes <- n
+        | TotalNodes n -> totalNumNodes <- n
         | ConvergeGossip -> 
-            count <- count + 1
-            if count = totalNodes then
-                timer.Stop()
-                printfn "Time for convergence: %f ms" timer.Elapsed.TotalMilliseconds
+            nodeCount <- nodeCount + 1
+            if nodeCount = totalNumNodes then
+                stopWatch.Stop()
+                printfn "Time for convergence: %f ms" stopWatch.Elapsed.TotalMilliseconds
                 printfn "------------- End Gossip -------------"
                 Environment.Exit(0)
         | ConvergePushSum (sum, weight) ->
-            count <- count + 1
-            if count = totalNodes then
-                timer.Stop()
-                printfn "Time for convergence: %f ms" timer.Elapsed.TotalMilliseconds
+            nodeCount <- nodeCount + 1
+            if nodeCount = totalNumNodes then
+                stopWatch.Stop()
+                printfn "Time for convergence: %f ms" stopWatch.Elapsed.TotalMilliseconds
                 printfn "Delta value of convergence: %f sum = %f & weight = %f" (sum/weight) sum weight
                 printfn "------------- End Push-Sum -------------"
                 Environment.Exit(0)
@@ -111,30 +111,31 @@ let GossipActor (mailbox: Actor<_>) =
     loop()
 
 let GossipWorker (mailbox: Actor<_>) =
-    let mutable rumourCount = 0
-    let mutable neighbours: IActorRef [] = [||]
+    let mutable rumoursHeard = 0
+    let mutable neighboursList: IActorRef [] = [||]
 
     let rec loop()= actor{
         let! message = mailbox.Receive();
         try
             match message with
             | InitailizeNeighbours aref ->
-                neighbours <- aref
+                neighboursList <- aref
 
             | ShareGossip ->
-                if rumourCount < 11 then
-                    let rnd = Random().Next(0, neighbours.Length)
-                    if not saturatedNodesDict.[neighbours.[rnd]] then
-                        neighbours.[rnd] <! CallWorker
+                if rumoursHeard < 11 then
+                    let rnd = Random().Next(0, neighboursList.Length)
+                    if not saturatedNodesDict.[neighboursList.[rnd]] then
+                        neighboursList.[rnd] <! CallWorker
                     mailbox.Self <! ShareGossip
 
             | CallWorker ->
-                if rumourCount = 0 then 
+                if rumoursHeard = 0 then 
                     mailbox.Self <! ShareGossip
-                if (not saturatedNodesDict.[mailbox.Self]) && (rumourCount = 15) then 
+                if (not saturatedNodesDict.[mailbox.Self]) && (rumoursHeard = 11) then 
                     master <! ConvergeGossip
                     saturatedNodesDict.[mailbox.Self] <- true
-                rumourCount <- rumourCount + 1
+
+                rumoursHeard <- rumoursHeard + 1
 
             | _ -> ()
         with
@@ -148,7 +149,7 @@ let PushSumWorker (mailbox: Actor<_>) =
     let mutable weight = 1.0
     let mutable termRound = 1
     let mutable neighbours: IActorRef [] = [||]
-    let mutable alreadyConverged = false
+    let mutable isConverged = false
     
     
     let rec loop()= actor{
@@ -167,33 +168,30 @@ let PushSumWorker (mailbox: Actor<_>) =
 
             sum <- sum / 2.0
             weight <- weight / 2.0
-            neighbours.[index] <! ComputePushSum(sum, weight, delta)
+            neighbours.[index] <! CalculatePushSum(sum, weight, delta)
 
-        | ComputePushSum (s: float, w, delta) ->
-            let newsum = sum + s
-            let newweight = weight + w
+        | CalculatePushSum (s: float, w, delta) ->
 
-            let change = sum / weight - newsum / newweight |> abs
-
-            if alreadyConverged then
-
-                let index = Random().Next(0, neighbours.Length)
-                neighbours.[index] <! ComputePushSum(s, w, delta)
-            
+            let index = Random().Next(0, neighbours.Length)
+            if isConverged then
+               neighbours.[index] <! CalculatePushSum(s, w, delta)
             else
+                let updatedSum = sum + s
+                let updatedWeight = weight + w
+                let change = (sum / weight) - (updatedSum / updatedWeight) |> abs
+                
                 if change < delta then
                     termRound <- termRound + 1
                 else 
                     termRound <- 0
 
                 if  termRound = 3 then
-                    alreadyConverged <- true
+                    isConverged <- true
                     master <! ConvergePushSum(sum, weight)
             
-                sum <- newsum / 2.0
-                weight <- newweight / 2.0
-                let index = Random().Next(0, neighbours.Length)
-                neighbours.[index] <! ComputePushSum(sum, weight, delta)
+                sum <- updatedWeight / 2.0
+                weight <- updatedWeight / 2.0
+                neighbours.[index] <! CalculatePushSum(sum, weight, delta)
         | _ -> ()
         return! loop()
     }            
@@ -204,7 +202,7 @@ let PushSumWorker (mailbox: Actor<_>) =
 //-------------------------------------- Main Program --------------------------------------//
 globalNodeArray <- Array.zeroCreate (nodes + 1)
 for x in [0..nodes] do
-    match protocol with
+    match algorithm with
     | "gossip" -> 
         let key: string = "GossipWorker" + string(x)
         globalNodeArray.[x] <- spawn system (key) GossipWorker
@@ -283,13 +281,13 @@ match topology with
 
 | _ -> ()
 
-timer.Start()
+stopWatch.Start()
 // Select a random worker to begin the gossip
 let leader = Random().Next(0, nodes)
 master <! TotalNodes(nodes)
 master <! Time(DateTime.Now.TimeOfDay.Milliseconds)
 
-match protocol with
+match algorithm with
 | "gossip" -> 
     printfn "------------- Start Gossip -------------"
     match topology with
