@@ -98,7 +98,7 @@ let GossipActor (mailbox: Actor<_>) =
                 let randomActor = neighborsList.[randomNumber]
                 
                 // Check if node is not converged then send the message
-                if (saturatedNodesDict.[neighborsList.[randomNumber]]) then  
+                if (saturatedNodesDict.[randomActor]) then  
                     (neighborsList.Remove randomActor) |> ignore
                 else 
                     randomActor <! CallWorker
