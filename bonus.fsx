@@ -13,7 +13,7 @@ type GossipMessageTypes =
     | TotalNodes of int
     | InitailizeNeighbours of IActorRef []
     | InitializeVariables of int
-    | ShareGossip
+    | ShareGossip of bool
     | CallWorker
     | ConvergeGossip
     | StartPushSum of Double
@@ -21,7 +21,6 @@ type GossipMessageTypes =
     | ConvergePushSum of Double * Double
     | ActivateGossipWorker of List<IActorRef> * int
     | ActivatePushSumWorker of List<IActorRef> * int
-    | Shutdown of int*IActorRef []
     | GetNeighborsToIgnore of int []
 
 let mutable nodes = int (string (fsi.CommandLineArgs.GetValue 1))
@@ -155,16 +154,17 @@ let GossipWorker (mailbox: Actor<_>) =
                 if Array.contains indexDictionary.[mailbox.Self] neighborsToIgoreArray  then
                     faultynode <- true
 
-            | ShareGossip ->
-                if rumoursHeard < 11 then
-                    let rnd = Random().Next(0, neighboursList.Length)
-                    if not saturatedNodesDict.[neighboursList.[rnd]] then
-                        neighboursList.[rnd] <! CallWorker
-                    mailbox.Self <! ShareGossip
+            | ShareGossip isActive ->
+                if (not faultynode || isActive) then
+                    if rumoursHeard < 11 then
+                        let rnd = Random().Next(0, neighboursList.Length)
+                        if not saturatedNodesDict.[neighboursList.[rnd]] then
+                            neighboursList.[rnd] <! CallWorker
+                        mailbox.Self <! ShareGossip false
 
             | CallWorker ->
                 if rumoursHeard = 0 then 
-                    mailbox.Self <! ShareGossip
+                    mailbox.Self <! ShareGossip true
                 if (not saturatedNodesDict.[mailbox.Self]) && (rumoursHeard = 11) then 
                     master <! ConvergeGossip
                     saturatedNodesDict.[mailbox.Self] <- true
@@ -178,7 +178,7 @@ let GossipWorker (mailbox: Actor<_>) =
     loop()
 
 let PushSumWorker (mailbox: Actor<_>) =
-    let mutable sum = 0 |>double
+    let mutable sum = 0 |> double
     let mutable weight = 1.0
     let mutable termRound = 1
     let mutable neighbours: IActorRef [] = [||]
@@ -230,7 +230,7 @@ let PushSumWorker (mailbox: Actor<_>) =
 
                     sum <- updatedWeight / 2.0
                     weight <- updatedWeight / 2.0
-                    neighbours.[index] <! CalculatePushSum(sum, weight, delta, false)
+                    neighbours.[index] <! CalculatePushSum(sum, weight, delta, true)
         | _ -> ()
         return! loop()
     }            
@@ -249,8 +249,8 @@ for x in [0..nodes] do
         let key: string = "PushSumWorker" + string(x)
         globalNodeArray.[x] <- spawn system (key) PushSumWorker
     | _ -> Environment.Exit(0)
-    indexDictionary.Add(globalNodeArray.[x], x)
     saturatedNodesDict.Add(globalNodeArray.[x], false)
+    indexDictionary.Add(globalNodeArray.[x], x)
     globalNodeArray.[x] <! InitializeVariables x
 
 for i = 1 to numNodesToIgnore do   
@@ -355,8 +355,8 @@ match algorithm with
         neighbors.Add globalNodeArray.[i]
     printfn "Starting Push Sum Protocol"
     printfn "------------- Start Push-Sum -------------"
-    globalNodeArray.[leader] <! StartPushSum(10.0 ** -10.0)     
     PushSumActorWorker <! ActivatePushSumWorker(neighbors, int(nodes))
+    globalNodeArray.[leader] <! StartPushSum(10.0 ** -10.0)     
 | _ ->
     printfn "Invalid protocol" 
 
