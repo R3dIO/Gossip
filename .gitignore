@@ -1,5 +1,5 @@
 bin
 obj
-
+*-mm.fsx
 .fake
 .ionide
